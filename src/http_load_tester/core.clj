@@ -33,7 +33,8 @@
   [{:keys [url request-count concurrent-requests]}]
   (let [request-channel (chan request-count)
         response-channel (chan request-count)
-        responses (atom [])]
+        success-count (atom 0)
+        failure-count (atom 0)]
 
     (dotimes [i request-count]
       (>!! request-channel i))
@@ -43,15 +44,20 @@
     (dotimes [_ concurrent-requests]
       (go-loop []
         (when-let [_ (<! request-channel)]
+             ;; (and (:status response) (<= 200 (:status response) 299))
           (>! response-channel (get-request url))
           (recur))))
 
     (dotimes [_ request-count]
-      (swap! responses conj (<!! response-channel)))
+      (let [response (<!! response-channel)]
+        (if (and (:status response) (<= 200 (:status response) 299))
+          (swap! success-count inc)
+          (swap! failure-count inc))))
 
     (close! response-channel)
 
-    @responses))
+    {:success-count @success-count
+     :failure-count @failure-count}))
 
 (defn parse-args
   [& args]
@@ -86,16 +92,6 @@
     (catch NumberFormatException _e
       {:error "Error: COUNT must be a number"})))
 
-(defn summarise
-  [responses]
-  (let [network-errors (filter #(:error %) responses)
-        http-errors (filter #(when-let [status (:status %)]
-                               (not (<= 200 status 299))) responses)
-        failure-count (+ (count network-errors) (count http-errors))
-        success-count (- (count responses) failure-count)]
-    {:failure-count failure-count
-     :success-count success-count}))
-
 (defn -main
   [& args]
   (try
@@ -104,8 +100,7 @@
         (do
           (println error)
           (System/exit 1))
-        (let [responses (make-requests parsed-args)
-              {:keys [success-count failure-count]} (summarise responses)]
+        (let [{:keys [success-count failure-count]} (make-requests parsed-args)]
           (println "Successes: " success-count)
           (println "Failures: " failure-count))))
     (catch Exception e
