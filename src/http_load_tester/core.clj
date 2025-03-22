@@ -32,11 +32,11 @@
         (System/exit 1)))))
 
 (comment
-  (def example-url  "http://localhost:8000")
+  (def example-url  "http://localhost:8000/hello.txt")
   (-main example-url)
 
   (s/valid? ::url-string example-url)
-  (s/valid? ::url-string "http//localhost:8000")
+  (s/valid? ::url-string (str/replace example-url ":" ""))
 
   ;
   )
