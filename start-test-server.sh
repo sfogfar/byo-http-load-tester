@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Check if Python is installed
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python 3 is not installed or not in your PATH."
+    echo "Please install Python 3 to run this test server."
+    exit 1
+fi
+
 mkdir -p test-server
 cd test-server
 
