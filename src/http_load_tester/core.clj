@@ -2,7 +2,7 @@
   (:gen-class)
   (:require
    [clj-http.client :as client]
-   [clojure.core.async :refer [<! <!! >! >!! chan go-loop]]
+   [clojure.core.async :refer [<! <!! >! >!! chan close! go-loop]]
    [clojure.spec.alpha :as s]
    [clojure.string :as str]))
 
@@ -18,7 +18,7 @@
   (if (s/valid? ::url-string url)
     (try
       (let [response (client/get url {:as :stream
-                                      :retry-handler (fn [& _] false)
+                                      :retry-handler (constantly false)
                                       :socket-timeout 5000
                                       :connection-timeout 3000})]
         ;; Close the stream and discard the body
@@ -38,14 +38,18 @@
     (dotimes [i request-count]
       (>!! request-channel i))
 
+    (close! request-channel)
+
     (dotimes [_ concurrent-requests]
       (go-loop []
         (when-let [_ (<! request-channel)]
-          (>! response-channel (get-request url)))
-        (recur)))
+          (>! response-channel (get-request url))
+          (recur))))
 
     (dotimes [_ request-count]
       (swap! responses conj (<!! response-channel)))
+
+    (close! response-channel)
 
     @responses))
 
@@ -78,7 +82,7 @@
        :concurrent-requests (Integer/parseInt (last args))}
 
       :else
-      {:error "Usage: program -u <url> [-n <request-count>]"})
+      {:error "Usage: program -u <url> [-n <request-count>] [-c <concurrent-requests>]"})
     (catch NumberFormatException _e
       {:error "Error: COUNT must be a number"})))
 
@@ -96,14 +100,14 @@
   [& args]
   (try
     (let [parsed-args (apply parse-args args)]
-      (if (:error parsed-args)
+      (if-let [error (:error parsed-args)]
         (do
-          (println (:error parsed-args))
+          (println error)
           (System/exit 1))
         (let [responses (make-requests parsed-args)
-              summary (summarise responses)]
-          (println (str "Successes: " (:success-count summary)))
-          (println (str "Failures: " (:failure-count summary))))))
+              {:keys [success-count failure-count]} (summarise responses)]
+          (println "Successes: " success-count)
+          (println "Failures: " failure-count))))
     (catch Exception e
       (println "Error:" (.getMessage e))
       (System/exit 1))))
