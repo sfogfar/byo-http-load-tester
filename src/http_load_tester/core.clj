@@ -17,7 +17,7 @@
   [url]
   (if (s/valid? ::url-string url)
     (try
-      (let [response (client/get url {:as :stream 
+      (let [response (client/get url {:as :stream
                                       :retry-handler (fn [& _] false)
                                       :socket-timeout 5000
                                       :connection-timeout 3000})]
@@ -46,7 +46,7 @@
 
     (dotimes [_ request-count]
       (swap! responses conj (<!! response-channel)))
-    
+
     @responses))
 
 (defn parse-args
@@ -82,6 +82,16 @@
     (catch NumberFormatException _e
       {:error "Error: COUNT must be a number"})))
 
+(defn summarise
+  [responses]
+  (let [network-errors (filter #(:error %) responses)
+        http-errors (filter #(when-let [status (:status %)]
+                               (not (<= 200 status 299))) responses)
+        failure-count (+ (count network-errors) (count http-errors))
+        success-count (- (count responses) failure-count)]
+    {:failure-count failure-count
+     :success-count success-count}))
+
 (defn -main
   [& args]
   (try
@@ -90,11 +100,10 @@
         (do
           (println (:error parsed-args))
           (System/exit 1))
-        (let [responses (make-requests parsed-args)]
-          (doseq [response responses]
-            (if (:status response)
-              (println (str "Response code: " (:status response)))
-              (println (str "Error! " (:error response))))))))
+        (let [responses (make-requests parsed-args)
+              summary (summarise responses)]
+          (println (str "Successes: " (:success-count summary)))
+          (println (str "Failures: " (:failure-count summary))))))
     (catch Exception e
       (println "Error:" (.getMessage e))
       (System/exit 1))))
